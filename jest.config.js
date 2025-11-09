@@ -11,4 +11,7 @@ module.exports = {
   },
   moduleFileExtensions: ["ts", "tsx", "js", "jsx", "json", "node"],
   testMatch: ["**/__tests__/**/*.[jt]s?(x)", "**/?(*.)+(spec|test).[jt]s?(x)"],
+  // Enable automatic mocking for the __mocks__ directory
+  clearMocks: true,
+  resetMocks: true,
 };

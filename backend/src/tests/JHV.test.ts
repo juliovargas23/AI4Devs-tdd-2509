@@ -1,168 +1,62 @@
-// @ts-nocheck
 /**
  * @fileoverview Comprehensive Jest test suite for Candidate model database operations
  * @description Tests form data reception, database persistence, and error handling
  * @author Senior Software Testing Engineer
- * @version 1.0.0
+ * @version 2.0.0 - Refactored with Prisma's recommended mocking approach
  * 
- * Note: TypeScript checking is disabled for this file due to Jest mock factory
- * constraints and dynamic class creation. All tests execute successfully.
+ * This test suite follows Prisma's official testing guidelines:
+ * @see https://www.prisma.io/blog/testing-series-1-8eRB5p0Y8o
  */
 
-// ============================================================================
-// MOCK SETUP - Complete Database Isolation
-// ============================================================================
+import { Prisma } from '@prisma/client';
+import { prismaMock } from '../lib/__mocks__/prisma';
 
-/**
- * Mock PrismaClient to prevent real database calls
- * This ensures complete test isolation from the database
- */
-const mockCreate = jest.fn();
-const mockUpdate = jest.fn();
-const mockFindUnique = jest.fn();
-
-const mockPrismaInstance = {
-  candidate: {
-    create: mockCreate,
-    update: mockUpdate,
-    findUnique: mockFindUnique,
-  },
-};
-
-jest.mock('@prisma/client', () => ({
-  PrismaClient: jest.fn(() => mockPrismaInstance),
-  Prisma: {
-    PrismaClientKnownRequestError: class PrismaClientKnownRequestError extends Error {
-      constructor(message, { code, clientVersion, meta }) {
-        super(message);
-        this.code = code;
-        this.clientVersion = clientVersion;
-        this.meta = meta;
-        this.name = 'PrismaClientKnownRequestError';
-      }
-    },
-    PrismaClientValidationError: class PrismaClientValidationError extends Error {
-      constructor(message, { clientVersion }) {
-        super(message);
-        this.clientVersion = clientVersion;
-        this.name = 'PrismaClientValidationError';
-      }
-    },
-    PrismaClientInitializationError: class PrismaClientInitializationError extends Error {
-      constructor(message, clientVersion, errorCode) {
-        super(message);
-        this.clientVersion = clientVersion;
-        this.errorCode = errorCode;
-        this.name = 'PrismaClientInitializationError';
-      }
-    },
-  },
+// Mock the Prisma singleton module to return our deep mock
+jest.mock('../lib/prisma', () => ({
+  __esModule: true,
+  default: require('../lib/__mocks__/prisma').prismaMock,
 }));
 
-// Import Prisma error classes from the mock
-const { Prisma } = require('@prisma/client');
-const PrismaClientKnownRequestError = Prisma.PrismaClientKnownRequestError;
-const PrismaClientValidationError = Prisma.PrismaClientValidationError;
-const PrismaClientInitializationError = Prisma.PrismaClientInitializationError;
-
-/**
- * Candidate class for testing
- * Replicates the actual Candidate model with mocked database operations
- */
-class Candidate {
-  constructor(data) {
-    this.id = data.id;
-    this.firstName = data.firstName;
-    this.lastName = data.lastName;
-    this.email = data.email;
-    this.phone = data.phone;
-    this.address = data.address;
-    this.education = data.education || [];
-    this.workExperience = data.workExperience || [];
-    this.resumes = data.resumes || [];
-  }
-
-  async save() {
-    const candidateData = {};
-
-    if (this.firstName !== undefined) candidateData.firstName = this.firstName;
-    if (this.lastName !== undefined) candidateData.lastName = this.lastName;
-    if (this.email !== undefined) candidateData.email = this.email;
-    if (this.phone !== undefined) candidateData.phone = this.phone;
-    if (this.address !== undefined) candidateData.address = this.address;
-
-    if (this.education.length > 0) {
-      candidateData.educations = {
-        create: this.education.map(edu => ({
-          institution: edu.institution,
-          title: edu.title,
-          startDate: edu.startDate,
-          endDate: edu.endDate
-        }))
-      };
-    }
-
-    if (this.workExperience.length > 0) {
-      candidateData.workExperiences = {
-        create: this.workExperience.map(exp => ({
-          company: exp.company,
-          position: exp.position,
-          description: exp.description,
-          startDate: exp.startDate,
-          endDate: exp.endDate
-        }))
-      };
-    }
-
-    if (this.resumes.length > 0) {
-      candidateData.resumes = {
-        create: this.resumes.map(resume => ({
-          filePath: resume.filePath,
-          fileType: resume.fileType
-        }))
-      };
-    }
-
-    if (this.id) {
-      try {
-        return await mockPrismaInstance.candidate.update({
-          where: { id: this.id },
-          data: candidateData
-        });
-      } catch (error) {
-        if (error.name === 'PrismaClientInitializationError') {
-          throw new Error('No se pudo conectar con la base de datos. Por favor, asegúrese de que el servidor de base de datos esté en ejecución.');
-        } else if (error.code === 'P2025') {
-          throw new Error('No se pudo encontrar el registro del candidato con el ID proporcionado.');
-        } else {
-          throw error;
-        }
-      }
-    } else {
-      try {
-        const result = await mockPrismaInstance.candidate.create({
-          data: candidateData
-        });
-        return result;
-      } catch (error) {
-        if (error.name === 'PrismaClientInitializationError') {
-          throw new Error('No se pudo conectar con la base de datos. Por favor, asegúrese de que el servidor de base de datos esté en ejecución.');
-        } else {
-          throw error;
-        }
-      }
-    }
-  }
-}
+// Import Candidate AFTER setting up the mock so it gets the mocked prisma
+import { Candidate } from '../domain/models/Candidate';
 
 // ============================================================================
 // TEST DATA FIXTURES - Typed Test Data Factory
 // ============================================================================
 
 /**
+ * Interface for test candidate data
+ */
+interface TestCandidateData {
+  id?: number;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone?: string;
+  address?: string;
+  education?: Array<{
+    institution: string;
+    title: string;
+    startDate: Date;
+    endDate?: Date;
+  }>;
+  workExperience?: Array<{
+    company: string;
+    position: string;
+    description?: string;
+    startDate: Date;
+    endDate?: Date;
+  }>;
+  resumes?: Array<{
+    filePath: string;
+    fileType: string;
+  }>;
+}
+
+/**
  * Factory function for creating valid candidate test data
  */
-const createValidCandidateData = (overrides = {}) => ({
+const createValidCandidateData = (overrides: Partial<TestCandidateData> = {}): TestCandidateData => ({
   firstName: 'John',
   lastName: 'Doe',
   email: 'john.doe@example.com',
@@ -197,7 +91,7 @@ const createValidCandidateData = (overrides = {}) => ({
 /**
  * Factory function for creating minimal required candidate data
  */
-const createMinimalCandidateData = () => ({
+const createMinimalCandidateData = (): TestCandidateData => ({
   firstName: 'Jane',
   lastName: 'Smith',
   email: 'jane.smith@example.com'
@@ -206,7 +100,7 @@ const createMinimalCandidateData = () => ({
 /**
  * Factory function for expected Prisma database response
  */
-const createExpectedDatabaseResponse = (data) => ({
+const createExpectedDatabaseResponse = (data: TestCandidateData) => ({
   id: data.id || 1,
   firstName: data.firstName,
   lastName: data.lastName,
@@ -226,15 +120,8 @@ describe('Candidate Model Tests', () => {
   // ============================================================================
 
   /**
-   * Reset all mocks before each test to ensure isolation
-   * Prevents test pollution and ensures predictable behavior
-   */
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
-
-  /**
-   * Cleanup after each test to prevent memory leaks
+   * Clear all mock call history after each test
+   * Note: mockReset is already called in __mocks__/prisma.ts beforeEach
    */
   afterEach(() => {
     jest.clearAllMocks();
@@ -390,15 +277,15 @@ describe('Candidate Model Tests', () => {
       
       const expectedResponse = createExpectedDatabaseResponse(completeData);
       
-      // Mock successful database create operation
-      mockCreate.mockResolvedValue(expectedResponse);
+      // Mock successful database create operation using jest-mock-extended
+      prismaMock.candidate.create.mockResolvedValue(expectedResponse as any);
 
       // ========== ACT ==========
       const result = await candidate.save();
 
       // ========== ASSERT ==========
-      expect(mockCreate).toHaveBeenCalledTimes(1);
-      expect(mockCreate).toHaveBeenCalledWith({
+      expect(prismaMock.candidate.create).toHaveBeenCalledTimes(1);
+      expect(prismaMock.candidate.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
           firstName: completeData.firstName,
           lastName: completeData.lastName,
@@ -446,14 +333,14 @@ describe('Candidate Model Tests', () => {
       const expectedResponse = createExpectedDatabaseResponse(minimalData);
       
       // Mock successful database create operation
-      mockCreate.mockResolvedValue(expectedResponse);
+      prismaMock.candidate.create.mockResolvedValue(expectedResponse as any);
 
       // ========== ACT ==========
       const result = await candidate.save();
 
       // ========== ASSERT ==========
-      expect(mockCreate).toHaveBeenCalledTimes(1);
-      expect(mockCreate).toHaveBeenCalledWith({
+      expect(prismaMock.candidate.create).toHaveBeenCalledTimes(1);
+      expect(prismaMock.candidate.create).toHaveBeenCalledWith({
         data: {
           firstName: minimalData.firstName,
           lastName: minimalData.lastName,
@@ -477,8 +364,8 @@ describe('Candidate Model Tests', () => {
       });
       const candidate = new Candidate(duplicateEmailData);
       
-      // Mock Prisma unique constraint violation error (P2002)
-      const prismaError = new PrismaClientKnownRequestError(
+      // Mock Prisma unique constraint violation error (P2002) using actual Prisma error class
+      const prismaError = new Prisma.PrismaClientKnownRequestError(
         'Unique constraint failed on the fields: (`email`)',
         {
           code: 'P2002',
@@ -487,12 +374,12 @@ describe('Candidate Model Tests', () => {
         }
       );
       
-      mockCreate.mockRejectedValue(prismaError);
+      prismaMock.candidate.create.mockRejectedValue(prismaError);
 
       // ========== ACT & ASSERT ==========
-      await expect(candidate.save()).rejects.toThrow(PrismaClientKnownRequestError);
+      await expect(candidate.save()).rejects.toThrow(Prisma.PrismaClientKnownRequestError);
       await expect(candidate.save()).rejects.toThrow('Unique constraint failed');
-      expect(mockCreate).toHaveBeenCalled();
+      expect(prismaMock.candidate.create).toHaveBeenCalled();
     });
 
     /**
@@ -506,19 +393,19 @@ describe('Candidate Model Tests', () => {
         firstName: 'Test',
         // Missing lastName and email (required fields)
       };
-      const candidate = new Candidate(invalidData);
+      const candidate = new Candidate(invalidData as any);
       
-      // Mock Prisma missing field error
-      const prismaError = new PrismaClientValidationError(
+      // Mock Prisma missing field error using actual Prisma error class
+      const prismaError = new Prisma.PrismaClientValidationError(
         'Missing required field: email',
         { clientVersion: '5.13.0' }
       );
       
-      mockCreate.mockRejectedValue(prismaError);
+      prismaMock.candidate.create.mockRejectedValue(prismaError);
 
       // ========== ACT & ASSERT ==========
-      await expect(candidate.save()).rejects.toThrow(PrismaClientValidationError);
-      expect(mockCreate).toHaveBeenCalled();
+      await expect(candidate.save()).rejects.toThrow(Prisma.PrismaClientValidationError);
+      expect(prismaMock.candidate.create).toHaveBeenCalled();
     });
 
     /**
@@ -530,20 +417,20 @@ describe('Candidate Model Tests', () => {
       const candidateData = createValidCandidateData();
       const candidate = new Candidate(candidateData);
       
-      // Mock database initialization/connection error
-      const connectionError = new PrismaClientInitializationError(
+      // Mock database initialization/connection error using actual Prisma error class
+      const connectionError = new Prisma.PrismaClientInitializationError(
         'Can\'t reach database server',
         '5.13.0',
         'P1001'
       );
       
-      mockCreate.mockRejectedValue(connectionError);
+      prismaMock.candidate.create.mockRejectedValue(connectionError);
 
       // ========== ACT & ASSERT ==========
       await expect(candidate.save()).rejects.toThrow(
         'No se pudo conectar con la base de datos. Por favor, asegúrese de que el servidor de base de datos esté en ejecución.'
       );
-      expect(mockCreate).toHaveBeenCalled();
+      expect(prismaMock.candidate.create).toHaveBeenCalled();
     });
 
     /**
@@ -558,15 +445,15 @@ describe('Candidate Model Tests', () => {
       const expectedResponse = createExpectedDatabaseResponse(existingCandidateData);
       
       // Mock successful database update operation
-      mockUpdate.mockResolvedValue(expectedResponse);
+      prismaMock.candidate.update.mockResolvedValue(expectedResponse as any);
 
       // ========== ACT ==========
       const result = await candidate.save();
 
       // ========== ASSERT ==========
-      expect(mockUpdate).toHaveBeenCalledTimes(1);
-      expect(mockCreate).not.toHaveBeenCalled();
-      expect(mockUpdate).toHaveBeenCalledWith({
+      expect(prismaMock.candidate.update).toHaveBeenCalledTimes(1);
+      expect(prismaMock.candidate.create).not.toHaveBeenCalled();
+      expect(prismaMock.candidate.update).toHaveBeenCalledWith({
         where: { id: 42 },
         data: expect.objectContaining({
           firstName: existingCandidateData.firstName,
@@ -586,8 +473,8 @@ describe('Candidate Model Tests', () => {
       const nonExistentData = createValidCandidateData({ id: 9999 });
       const candidate = new Candidate(nonExistentData);
       
-      // Mock Prisma record not found error (P2025)
-      const notFoundError = new PrismaClientKnownRequestError(
+      // Mock Prisma record not found error (P2025) using actual Prisma error class
+      const notFoundError = new Prisma.PrismaClientKnownRequestError(
         'Record to update not found.',
         {
           code: 'P2025',
@@ -596,13 +483,13 @@ describe('Candidate Model Tests', () => {
         }
       );
       
-      mockUpdate.mockRejectedValue(notFoundError);
+      prismaMock.candidate.update.mockRejectedValue(notFoundError);
 
       // ========== ACT & ASSERT ==========
       await expect(candidate.save()).rejects.toThrow(
         'No se pudo encontrar el registro del candidato con el ID proporcionado.'
       );
-      expect(mockUpdate).toHaveBeenCalled();
+      expect(prismaMock.candidate.update).toHaveBeenCalled();
     });
 
     /**
@@ -615,7 +502,7 @@ describe('Candidate Model Tests', () => {
       const candidate = new Candidate(candidateData);
       
       const expectedResponse = createExpectedDatabaseResponse(candidateData);
-      mockCreate.mockResolvedValue(expectedResponse);
+      prismaMock.candidate.create.mockResolvedValue(expectedResponse as any);
 
       const startTime = Date.now();
 
@@ -628,7 +515,7 @@ describe('Candidate Model Tests', () => {
       // ========== ASSERT ==========
       // Mock operations should complete very quickly (< 100ms)
       expect(executionTime).toBeLessThan(100);
-      expect(mockCreate).toHaveBeenCalled();
+      expect(prismaMock.candidate.create).toHaveBeenCalled();
     });
 
     /**
@@ -639,7 +526,7 @@ describe('Candidate Model Tests', () => {
       // ========== ARRANGE ==========
       const candidateData = createValidCandidateData();
       const expectedResponse = createExpectedDatabaseResponse(candidateData);
-      mockCreate.mockResolvedValue(expectedResponse);
+      prismaMock.candidate.create.mockResolvedValue(expectedResponse as any);
 
       // ========== ACT ==========
       // Perform multiple save operations
@@ -649,7 +536,7 @@ describe('Candidate Model Tests', () => {
       }
 
       // ========== ASSERT ==========
-      expect(mockCreate).toHaveBeenCalledTimes(10);
+      expect(prismaMock.candidate.create).toHaveBeenCalledTimes(10);
       // If this test completes without memory issues, cleanup is working correctly
     });
 
@@ -665,12 +552,11 @@ describe('Candidate Model Tests', () => {
         createValidCandidateData({ email: 'user3@example.com' })
       ];
       
-      mockCreate.mockImplementation((args) => {
-        return Promise.resolve(createExpectedDatabaseResponse({
-          ...candidatesData[0],
-          email: args.data.email
-        }));
-      });
+      // Mock different responses for each email
+      prismaMock.candidate.create
+        .mockResolvedValueOnce(createExpectedDatabaseResponse(candidatesData[0]) as any)
+        .mockResolvedValueOnce(createExpectedDatabaseResponse(candidatesData[1]) as any)
+        .mockResolvedValueOnce(createExpectedDatabaseResponse(candidatesData[2]) as any);
 
       // ========== ACT ==========
       const savePromises = candidatesData.map(data => {
@@ -682,7 +568,7 @@ describe('Candidate Model Tests', () => {
 
       // ========== ASSERT ==========
       expect(results).toHaveLength(3);
-      expect(mockCreate).toHaveBeenCalledTimes(3);
+      expect(prismaMock.candidate.create).toHaveBeenCalledTimes(3);
       results.forEach((result, index) => {
         expect(result.email).toBe(candidatesData[index].email);
       });

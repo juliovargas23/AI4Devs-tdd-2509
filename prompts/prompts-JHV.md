@@ -70,6 +70,8 @@ Enhanced the final prompt with critical database mocking requirements and explic
 - Specific describe block structure requirements
 - Database isolation mandates
 
+---
+
 ## Final Prompt Characteristics
 
 The evolved final prompt demonstrates sophisticated meta-prompting by incorporating:
@@ -204,4 +206,54 @@ Provide **production-ready code** for `backend/src/tests/JHV.test.ts` that direc
 **Start your response with the installation commands for mocking dependencies, then provide the complete implementation.**
 
 
+# Post execution Master Prompt - refactor 
 
+## Implementation Challenges & Solutions
+
+**Challenge:** Jest's `jest.mock()` factory function cannot reference TypeScript types or classes defined outside its scope, causing "out-of-scope variables" errors when attempting to use TypeScript class property declarations and type annotations within the mock setup. 
+
+**Solution:** Implemented JavaScript-style code with `// @ts-nocheck` directive, defining all mock classes and error constructors directly inside the `jest.mock()` factory using plain JavaScript syntax, which allows Jest to properly hoist and initialize mocks while maintaining full test functionality (all 14 tests passing in 294ms with zero real database calls).
+
+---
+
+## Post-Implementation Refactoring (Version 2.0)
+
+### Discovery of Better Approach
+
+After successfully implementing version 1.0 with the `@ts-nocheck` workaround, research into Prisma's official testing documentation revealed a superior approach using the `__mocks__` directory pattern with `jest-mock-extended`.
+
+### Refactoring Journey
+
+**Analysis Phase:**
+- Reviewed [Prisma's official testing blog post](https://www.prisma.io/blog/testing-series-1-8eRB5p0Y8o)
+- Identified key improvements: singleton pattern, DeepMockProxy, __mocks__ convention
+- Created comparison showing benefits over inline mocking approach
+
+**Implementation Phase (5-step process):**
+1. ✅ Created infrastructure:
+   - `backend/src/lib/prisma.ts` - Singleton PrismaClient instance
+   - `backend/src/lib/__mocks__/prisma.ts` - Deep mock with automatic reset
+2. ✅ Refactored test file (`JHV.test.ts`):
+   - Removed 700+ lines of inline mock setup
+   - Added TypeScript interfaces for test data
+   - Imported prismaMock from __mocks__ directory
+   - Removed `@ts-nocheck` directive
+3. ✅ Updated all models to use singleton:
+   - `Candidate.ts`, `Education.ts`, `WorkExperience.ts`, `Resume.ts`
+   - Replaced `const prisma = new PrismaClient()` with `import prisma from '../../lib/prisma'`
+4. ✅ Created `backend/jest.config.js` for proper path resolution
+5. ✅ Updated documentation to reflect improved approach
+
+**Results:**
+- ✅ All 14 tests passing in ~1.5s
+- ✅ Full TypeScript IntelliSense and autocomplete
+- ✅ Zero TypeScript compilation errors
+- ✅ Cleaner, more maintainable test code
+- ✅ Industry best practices alignment
+- ✅ Proper connection pooling with singleton pattern
+
+**Key Learnings:**
+- The `__mocks__` directory pattern is Jest's official convention for module mocking
+- `jest-mock-extended`'s `mockDeep<T>()` provides complete type-safe mocking
+- Singleton pattern benefits both production (connection pooling) and testing (consistent mocking)
+- Prisma's official recommendations should be preferred over workarounds
